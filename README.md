@@ -47,11 +47,9 @@ items to the parameter, such as:
   - `.callback()`: provide a callback function when the parameter changes, implies `.dynamic()`
   - `.dynamic()`: allow the parameter to by modified with dynamic reconfig
   - `.enum()`: specify an enumeration for integer parameters
+  - `.group()`: place the parameter in a sub-group
   - `.max()`: specify a maximum value for numeric parameters
   - `.min()`: specify a minimun value for numeric parameters
-  - `.step()`: specify a step size for numeric parameters
-
-Once the parameter has been configured, it's necessary to call the `.declare()` method.
 
 #### Static Parameters
 
@@ -59,26 +57,25 @@ For static parameters it's generally sufficient to just immediately store the
 value using the `.value()` method.
 
 ```
-auto node = std::make_shared<rclcpp::Node>("param_handler_example");
-hatchbed_common::ParamHandler params(node);
+hatchbed_common::ParamHandler params(ros::NodeHandle("~"));
 
 // integer parameter
-int num_tries = params.param("num_tries", 1, "Number of tries").min(1).max(50).declare().value();
+int num_tries = params.param("num_tries", 1, "Number of tries").min(1).max(50).value();
 
 // string parameter
-std::string frame_id = params.param("frame_id", std::string("base_link"), "TF frame").declare().value();
+std::string frame_id = params.param("frame_id", std::string("base_link"), "TF frame").value();
 
 // bool parameter
 bool debug = params.param("debug", false, "Enable debug mode").value();
 
 // double parameter
-double threshold = params.param("threshold", 0.75, "Threshold value").min(0.0).max(1.0).declare().value();
+double threshold = params.param("threshold", 0.75, "Threshold value").min(0.0).max(1.0).value();
 
 // enum parameter
 int mode = params.param("mode", 0, "Operating mode").enumerate({
     {0, "Default", "Default operating mode"},
     {1, "Advanced", "Advanced operating mode"},
-    {20, "Legacy", "Legacy operating mode"}}).declare().value();
+    {20, "Legacy", "Legacy operating mode"}}).value();
 ```
 
 #### Dynamic Parameters
@@ -90,11 +87,11 @@ parameter should be stored:
 
 ```
 int num_tries = 0;
-params.param(&num_tries, "num_tries", 1, "Number of tries").min(1).max(50).dynamic().declare();
+params.param(&num_tries, "num_tries", 1, "Number of tries").min(1).max(50).dynamic();
 
-while (rclcpp::ok()) {
+while (ros::ok()) {
     process.execute(num_tries);
-    rclcpp::spin_some(node);
+    ros::spinOnce();
 }
 
 ```
@@ -106,15 +103,15 @@ the parameter object returned by the handler should be used to ensure thread-saf
 data access.
 
 ```
-auto num_tries = params.param("num_tries", 1, "Number of tries").min(1).max(50).dynamic().declare();
+auto num_tries = params.param("num_tries", 1, "Number of tries").min(1).max(50).dynamic();
 
 std::thread t([&](){
-    while (rclcpp::ok()) {
+    while (ros::ok()) {
         process.execute(num_tries.value());
     }
 });
 
-rclcpp::spin(node);
+ros::spin();
 t.join();
 
 ```
@@ -134,11 +131,11 @@ that the value has changed:
 ```
 params.param("num_tries", 1, "Number of tries").min(1).max(50).callback([](int value){
     process.setNumTries(value);
-}).declare();
+});
 
-while (rclcpp::ok()) {
+while (ros::ok()) {
     process.exectute();
-    rclcpp::spin_some(node);
+    ros::spinOnce();
 }
 ```
 

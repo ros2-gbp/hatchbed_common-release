@@ -2,61 +2,55 @@
 #include <string>
 
 #include <hatchbed_common/param_handler.h>
-#include <rclcpp/rclcpp.hpp>
-#include <rcutils/logging.h>
-
-using namespace std::chrono_literals;
+#include <ros/ros.h>
 
 int main(int argc, char **argv)
 {
-    rclcpp::init(argc, argv);
-    auto node = std::make_shared<rclcpp::Node>("param_handler_example");
+    ros::init(argc, argv, "hatchbed_common_example");
+    ros::NodeHandle priv("~");
 
-    // The param handler needs to be initialized with a node handle
-    hatchbed_common::ParamHandler params(node);
-
-    // add 'verbose' dynamic parameter to handle enabling debug log level
-    params.register_verbose_logging_param();
+    // The param handler needs to be initialized with a private node handle to
+    // correctly namespace the dynamic reconfig topics.  It's also possible to
+    // provide a handle to sub-namespaces of the private namespace.
+    hatchbed_common::ParamHandler params(priv);
 
     //
     // Static parameters
     //
-    int num_tries = params.param("num_tries", 1, "Number of tries").min(1).max(50).declare().value();
-    std::string frame_id = params.param("frame_id", std::string("base_link"), "TF frame").declare().value();
-    bool debug = params.param("debug", false, "Enable debug mode").declare().value();
-    double threshold = params.param("threshold", 0.75, "Threshold value").min(0.0).max(1.0).declare().value();
+    int num_tries = params.param("num_tries", 1, "Number of tries").min(1).max(50).value();
+    std::string frame_id = params.param("frame_id", std::string("base_link"), "TF frame").value();
+    bool debug = params.param("debug", false, "Enable debug mode").value();
+    double threshold = params.param("threshold", 0.75, "Threshold value").min(0.0).max(1.0).value();
 
     // Sub-grouped
-    double coeff_a = params.param("internal.coeff_a", 1.0, "Coefficient A").min(0.0).max(1.0).declare().value();
-    double coeff_b = params.param("internal.coeff_b", 0.5, "Coefficient B").min(0.0).max(1.0).declare().value();
-    double coeff_c = params.param("internal.coeff_c", 55.47, "Coefficient C").min(-100.0).max(100.0).declare().value();
+    double coeff_a = params.param("coeff_a", 1.0, "Coefficient A").group("internal").min(0.0).max(1.0).value();
+    double coeff_b = params.param("coeff_b", 0.5, "Coefficient B").group("internal").min(0.0).max(1.0).value();
+    double coeff_c = params.param("coeff_c", 55.47, "Coefficient C").group("internal").min(-100.0).max(100.0).value();
 
     //
     // Dynamic parameters
     //
-    auto enable_feedback = params.param("enable_feedback", false, "Enable feedback").dynamic().declare();
+    auto enable_feedback = params.param("enable_feedback", false, "Enable feedback").dynamic();
     int mode = params.param("mode", 0, "Operating mode").enumerate({
         {0, "Default", "Default operating mode"},
         {1, "Advanced", "Advanced operating mode"},
-        {2, "Legacy", "Legacy operating mode"}}).dynamic().declare().value();
-    auto target_exposure = params.param("exposure", 2000.0, "Exposure (microseconds)").min(0.0).max(10000.0).callback([&](double value){
-        RCLCPP_INFO(node->get_logger(), "Handling change in exposure parameter.  New value is: %lf microseconds", value);
-    }).declare();
+        {20, "Legacy", "Legacy operating mode"}}).dynamic().value();
+    auto target_exposure = params.param("exposure", 2000.0, "Exposure (microseconds)").min(0.0).max(10000.0).callback([](double value){
+        ROS_INFO("Handling change in exposure parameter.  New value is: %lf microseconds", value);
+    });
 
     target_exposure.update(500);
 
-    auto timer = node->create_wall_timer(1.0s, [&](){
-        RCLCPP_DEBUG(node->get_logger(), "Debug log message.");
+    ros::Timer timer = priv.createTimer(ros::Duration(1.0), [&](const ros::TimerEvent& e){
         if (enable_feedback.value()) {
-            RCLCPP_INFO(node->get_logger(), "Feedback is currently enabled.");
+            ROS_INFO("Feedback is currently enabled.");
         }
         else {
-            RCLCPP_INFO(node->get_logger(), "Feedback is currently not enabled.");
-
+            ROS_INFO("Feedback is currently not enabled.");
         }
     });
 
-    rclcpp::spin(node);
+    ros::spin();
 
     return 0;
 }

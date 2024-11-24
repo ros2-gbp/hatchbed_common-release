@@ -39,8 +39,7 @@
 #include <utility>
 #include <vector>
 
-#include <rclcpp/rclcpp.hpp>
-#include <rcutils/logging.h>
+#include <ros/ros.h>
 
 namespace hatchbed_common {
 
@@ -68,29 +67,14 @@ struct EnumOption {
     std::string description;
 };
 
-class ParamHandler;
-
 template <class T>
 class Parameter {
     public:
-    class Declared {
-        public:
-        Declared(const Parameter& param) : param_(param) {}
-
-        T value() { return param_.value(); }
-        bool update(const T& value) { return param_.update(value, false); }
-
-        private:
-        Parameter param_;
-    };
-
-    Parameter(T* store, const std::string& ns, const std::string& name, T default_val, const std::string& description,
-              std::shared_ptr<rclcpp::Node> node)
+    Parameter(T* store, const std::string& ns, const std::string& name, T default_val, const std::string& description)
       : namespace_(ns),
         name_(name),
         default_val_(default_val),
-        description_(description),
-        node_(node)
+        description_(description)
     {
         if (!store) {
             owned_store_ = std::make_shared<OwnedStore<T>>(default_val_);
@@ -105,19 +89,22 @@ class Parameter {
     Parameter(const Parameter& parameter) = default;
     virtual ~Parameter() = default;
 
-    virtual Declared declare() {
-        registerParam();
-        return Declared(*this);
+    virtual Parameter<T>& group(const std::string& group) {
+        group_ = group;
+        configChanged();
+        return *this;
     }
 
     virtual Parameter<T>& callback(std::function<void(T)> callback) {
         is_dynamic_ = true;
         user_callback_ = callback;
+        configChanged();
         return *this;
     }
 
     virtual Parameter<T>& dynamic() {
         is_dynamic_ = true;
+        configChanged();
         return *this;
     }
 
@@ -136,11 +123,14 @@ class Parameter {
         return description_;
     }
 
+    std::string group() const {
+        return group_;
+    }
+
     bool isDynamic() const {
         return is_dynamic_;
     }
 
-    protected:
     T value() const {
         if (owned_store_) {
             std::scoped_lock lock(owned_store_->mutex);
@@ -151,9 +141,17 @@ class Parameter {
         return *borrowed_store_->value;
     }
 
+    void setPublishCallback(std::function<void(const std::string&)> callback) {
+        publish_callback_ = callback;
+    }
+
+    void setConfigChangeCallback(std::function<void(const std::string&)> callback) {
+        config_change_callback_ = callback;
+    }
+
     virtual bool update(const T& value, bool from_callback = false) {
-        if (initialized_ && !is_dynamic_) {
-            RCLCPP_WARN_STREAM(node_->get_logger(), namespace_ << "/" << name_ << " is static and can't be updated.");
+        // don't update if this is from a callback and not a dynamic parameter
+        if (from_callback && !is_dynamic_) {
             return false;
         }
 
@@ -161,24 +159,24 @@ class Parameter {
         if (owned_store_) {
             std::scoped_lock lock(owned_store_->mutex);
             did_change = owned_store_->value != value;
-            if (did_change && from_callback) {
-                RCLCPP_INFO_STREAM(node_->get_logger(), "updated <" << namespace_ << "/" << name_ << ">: "
-                    << toString(owned_store_->value) << " to " << toString(value));
+            if (did_change) {
+                ROS_INFO_STREAM("updated <" << namespace_ << "/" << name_ << ">: " << toString(owned_store_->value)
+                    << " to " << toString(value));
             }
             owned_store_->value = value;
         }
         else {
             std::scoped_lock lock(borrowed_store_->mutex);
             did_change = *borrowed_store_->value != value;
-            if (did_change && from_callback) {
-                RCLCPP_INFO_STREAM(node_->get_logger(), "updated <" << namespace_ << "/" << name_ << ">: "
-                    << toString(*borrowed_store_->value) <<" to " << toString(value));
+            if (did_change) {
+                ROS_INFO_STREAM("updated <" << namespace_ << "/" << name_ << ">: " << toString(*borrowed_store_->value)
+                    <<" to " << toString(value));
             }
             *borrowed_store_->value = value;
         }
 
-        if (!from_callback && did_change) {
-            node_->set_parameter({ name_, rclcpp::ParameterValue(this->value()) });
+        if (publish_callback_ && (!from_callback && did_change)) {
+            publish_callback_(name_);
         }
 
         if (user_callback_ && did_change) {
@@ -188,52 +186,60 @@ class Parameter {
         return true;
     }
 
+    protected:
     virtual std::string toString(const T& value) const {
         std::stringstream ss;
         ss << value;
         return ss.str();
     }
 
-    virtual void registerParam() {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description = description_;
-        descriptor.read_only = !is_dynamic_;
-        node_->declare_parameter(name_, rclcpp::ParameterValue(default_val_), descriptor);
-
-        update(getParameter());
-        RCLCPP_INFO_STREAM(this->node_->get_logger(), this->namespace_ << "/" << this->name_ << ": " << toString(this->value()));
-        initialized_ = true;
-    }
-
-    T getParameter() {
-        auto p = node_->get_parameter(name_);
-        return p.get_value<T>();
+    void configChanged() {
+        if (config_change_callback_) {
+            config_change_callback_(name_);
+        }
     }
 
     std::string namespace_;
     std::string name_;
     T default_val_;
     std::string description_;
-    std::shared_ptr<rclcpp::Node> node_;
     typename BorrowedStore<T>::Ptr borrowed_store_;
     typename OwnedStore<T>::Ptr owned_store_;
+    std::string group_;
 
-    bool initialized_ = false;
     bool is_dynamic_ = false;
     std::function<void(T)> user_callback_;
-
-    friend class ParamHandler;
+    std::function<void(const std::string&)> publish_callback_;
+    std::function<void(const std::string&)> config_change_callback_;
 };
 
 class BoolParameter : public Parameter<bool> {
     public:
-    BoolParameter(bool* store, const std::string& ns, const std::string& name, bool default_val,
-                  const std::string& description, std::shared_ptr<rclcpp::Node> node)
-      : Parameter<bool>(store, ns, name, default_val, description, node) {}
+    BoolParameter(bool* store, const std::string& ns, const std::string& name, bool default_val, const std::string& description)
+      : Parameter<bool>(store, ns, name, default_val, description) {}
 
     BoolParameter() = default;
     BoolParameter(const BoolParameter& parameter) = default;
     virtual ~BoolParameter() = default;
+
+    virtual BoolParameter& group(const std::string& group) override {
+        Parameter<bool>::group(group);
+        return *this;
+    }
+
+    virtual BoolParameter& callback(std::function<void(bool)> callback) override {
+        Parameter<bool>::callback(callback);
+        return *this;
+    }
+
+    virtual BoolParameter& dynamic() override {
+        Parameter<bool>::dynamic();
+        return *this;
+    }
+
+    std::string group() const {
+        return Parameter<bool>::group();
+    }
 
     protected:
     virtual std::string toString(const bool& value) const override {
@@ -247,13 +253,17 @@ class BoolParameter : public Parameter<bool> {
 template <typename T>
 class NumericParameter : public Parameter<T> {
     public:
-    NumericParameter(T* store, const std::string& ns, const std::string& name, T default_val,
-                     const std::string& description, std::shared_ptr<rclcpp::Node> node)
-      : Parameter<T>(store, ns, name, default_val, description, node) {}
+    NumericParameter(T* store, const std::string& ns, const std::string& name, T default_val, const std::string& description)
+      : Parameter<T>(store, ns, name, default_val, description) {}
 
     NumericParameter() = default;
     NumericParameter(const NumericParameter& parameter) = default;
     virtual ~NumericParameter() = default;
+
+    virtual NumericParameter<T>& group(const std::string& group) override {
+        Parameter<T>::group(group);
+        return *this;
+    }
 
     virtual NumericParameter<T>& callback(std::function<void(T)> callback) override {
         Parameter<T>::callback(callback);
@@ -267,35 +277,47 @@ class NumericParameter : public Parameter<T> {
 
     virtual NumericParameter<T>& min(T min) {
         min_ = min;
-        has_range_ = true;
+        has_min_ = true;
         if (max_ < min_) {
             max_ = min_;
         }
-        this->default_val_ = clamp(this->default_val_);
+        T clamped = clamp(Parameter<T>::value());
+        if (clamped != Parameter<T>::value()) {
+            ROS_INFO_STREAM("clamped <" << this->namespace_ << "/" << this->name_ << ">: " << this->toString(Parameter<T>::value())
+                <<" to " << this->toString(clamped));
+            update(clamped);
+        }
+        this->configChanged();
         return *this;
     }
 
     virtual NumericParameter<T>& max(T max) {
         max_ = max;
-        has_range_ = true;
+        has_max_ = true;
         if (min_ > max_) {
             min_ = max_;
         }
-        this->default_val_ = clamp(this->default_val_);
+
+        T clamped = clamp(Parameter<T>::value());
+        if (clamped != Parameter<T>::value()) {
+            ROS_INFO_STREAM("clamped <" << this->namespace_ << "/" << this->name_ << ">: " << this->toString(Parameter<T>::value())
+                <<" to " << this->toString(clamped));
+            update(clamped);
+        }
+        this->configChanged();
         return *this;
     }
 
-    virtual NumericParameter<T>& step(T step) {
-        step_ = step;
-        return *this;
+    std::string group() const {
+        return Parameter<T>::group();
     }
 
     T min() const {
         return min_;
     }
 
-    bool hasRange() const {
-        return has_range_;
+    bool hasMin() const {
+        return has_min_;
     }
 
 
@@ -303,68 +325,48 @@ class NumericParameter : public Parameter<T> {
         return max_;
     }
 
+    bool hasMax() const {
+        return has_max_;
+    }
+
     T clamp(const T& value) const {
         T clamped = value;
 
-        if (has_range_ && clamped < min_) {
+        if (has_min_ && clamped < min_) {
             clamped = min_;
         }
-        if (has_range_ && clamped > max_) {
+        if (has_max_ && clamped > max_) {
             clamped = max_;
         }
 
         return clamped;
     }
 
+    virtual bool update(const T& value, bool from_callback = false) override {
+        T clamped = clamp(value);
+        return Parameter<T>::update(clamped, from_callback);
+    }
+
     protected:
-    virtual bool update(const T& value, bool from_callback = false) {
-        if (has_range_ && (value < min_ || value > max_)) {
-            RCLCPP_WARN_STREAM(this->node_->get_logger(),  this->namespace_ << "/" << this->name_
-                               << ": value out of range <" << value << ">");
-            return false;
-        }
-
-        return Parameter<T>::update(value, from_callback);
-    }
-
-    virtual std::string toString(const T& value) const override {
-        return std::to_string(value);
-    }
-
-    virtual void registerParam() override {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description = this->description_;
-        descriptor.read_only = !this->is_dynamic_;
-        if (has_range_) {
-            descriptor.floating_point_range.resize(1);
-            descriptor.floating_point_range[0].from_value = min_;
-            descriptor.floating_point_range[0].to_value = max_;
-            descriptor.floating_point_range[0].step = step_;
-        }
-        this->node_->declare_parameter(this->name_, rclcpp::ParameterValue(this->default_val_), descriptor);
-        this->update(this->getParameter());
-
-        RCLCPP_INFO_STREAM(this->node_->get_logger(), this->namespace_ << "/" << this->name_ << ": " << toString(this->value()));
-        this->initialized_ = true;
-    }
-
     T min_ = -10000;
     T max_ = 10000;
-    T step_ = 0;
-    bool has_range_ = false;
-
-    friend class ParamHandler;
+    bool has_max_ = false;
+    bool has_min_ = false;
 };
 
 class IntParameter : public NumericParameter<int> {
     public:
-    IntParameter(int* store, const std::string& ns, const std::string& name, int default_val,
-                 const std::string& description, std::shared_ptr<rclcpp::Node> node)
-      : NumericParameter<int>(store, ns, name, default_val, description, node) {}
+    IntParameter(int* store, const std::string& ns, const std::string& name, int default_val, const std::string& description)
+      : NumericParameter<int>(store, ns, name, default_val, description) {}
 
     IntParameter() = default;
     IntParameter(const IntParameter& parameter) = default;
     virtual ~IntParameter() = default;
+
+    virtual IntParameter& group(const std::string& group) override {
+        NumericParameter<int>::group(group);
+        return *this;
+    }
 
     virtual IntParameter& callback(std::function<void(int)> callback) override {
         NumericParameter<int>::callback(callback);
@@ -390,34 +392,29 @@ class IntParameter : public NumericParameter<int> {
         return *this;
     }
 
-    virtual IntParameter& step(int step) {
-        if (enums_.empty()) {
-            NumericParameter<int>::step(step);
-        }
+    virtual IntParameter& enumerate(const std::vector<EnumOption>& enums) {
+        enums_ = enums;
+        configChanged();
         return *this;
     }
 
-    virtual IntParameter& enumerate(const std::vector<EnumOption>& enums) {
-        enums_ = enums;
-        if (!enums_.empty()) {
-            this->has_range_ = false;
-            this->step_ = 0;
-            this->min_ = enums_.front().value;
-            this->max_ = enums_.front().value;
-            for (const auto& option: enums_) {
-                this->min_ = std::min(this->min_, option.value);
-                this->max_ = std::max(this->max_, option.value);
-            }
-        }
-        return *this;
+    std::string group() const {
+        return NumericParameter<int>::group();
+    }
+
+    int min() const {
+        return NumericParameter<int>::min();
+    }
+
+    int max() const {
+        return NumericParameter<int>::max();
     }
 
     const std::vector<EnumOption>& enums() const {
         return enums_;
     }
 
-    protected:
-    virtual bool update(const int& value, bool from_callback = false) {
+    virtual bool update(const int& value, bool from_callback = false) override {
         if (enums_.empty()) {
             return NumericParameter<int>::update(value, from_callback);
         }
@@ -437,48 +434,17 @@ class IntParameter : public NumericParameter<int> {
         return false;
     }
 
+    protected:
     virtual std::string toString(const int& value) const override {
-        std::string str = std::to_string(value);
-
         for (const auto& option: enums_) {
             if (option.value == value) {
-                str += " (" + option.name + ")";
+                return std::to_string(value) + " (" + option.name + ")";
             }
         }
-        return str;
-    }
-
-    virtual void registerParam() override {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description = description_;
-
-        // generate enum description
-        if (!enums_.empty()) {
-            descriptor.description += "\nEnumeration:";
-            for (const auto& option: enums_) {
-                descriptor.description += "\n  " + option.name + "(" + std::to_string(option.value) + "): " + option.description;
-            }
-        }
-
-        descriptor.read_only = !is_dynamic_;
-
-        if (has_range_ || !enums_.empty()) {
-            descriptor.integer_range.resize(1);
-            descriptor.integer_range[0].from_value = min_;
-            descriptor.integer_range[0].to_value = max_;
-            descriptor.integer_range[0].step = step_;
-        }
-        node_->declare_parameter(name_, rclcpp::ParameterValue(default_val_), descriptor);
-
-        update(getParameter());
-
-        RCLCPP_INFO_STREAM(node_->get_logger(), namespace_ << "/" << name_ << ": " << toString(value()));
-        initialized_ = true;
+        return std::to_string(value);
     }
 
     std::vector<EnumOption> enums_;
-
-    friend class ParamHandler;
 };
 
 template class Parameter<bool>;
