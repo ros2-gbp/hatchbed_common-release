@@ -1,0 +1,12 @@
+Source: ros-noetic-hatchbed-common
+Section: misc
+Priority: optional
+Maintainer: Marc Alban <marcalban@hatchbed.com>
+Build-Depends: debhelper (>= 9.0.0), ros-noetic-catkin, ros-noetic-dynamic-reconfigure, ros-noetic-roscpp
+Homepage: 
+Standards-Version: 3.9.2
+
+Package: ros-noetic-hatchbed-common
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ros-noetic-dynamic-reconfigure, ros-noetic-roscpp
+Description: Common Hatchbed C++ utility code for ROS, such registering and handling updates to ros parameters.
