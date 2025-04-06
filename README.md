@@ -47,9 +47,11 @@ items to the parameter, such as:
   - `.callback()`: provide a callback function when the parameter changes, implies `.dynamic()`
   - `.dynamic()`: allow the parameter to by modified with dynamic reconfig
   - `.enum()`: specify an enumeration for integer parameters
-  - `.group()`: place the parameter in a sub-group
   - `.max()`: specify a maximum value for numeric parameters
   - `.min()`: specify a minimun value for numeric parameters
+  - `.step()`: specify a step size for numeric parameters
+
+Once the parameter has been configured, it's necessary to call the `.declare()` method.
 
 #### Static Parameters
 
@@ -57,25 +59,26 @@ For static parameters it's generally sufficient to just immediately store the
 value using the `.value()` method.
 
 ```
-hatchbed_common::ParamHandler params(ros::NodeHandle("~"));
+auto node = std::make_shared<rclcpp::Node>("param_handler_example");
+hatchbed_common::ParamHandler params(node);
 
 // integer parameter
-int num_tries = params.param("num_tries", 1, "Number of tries").min(1).max(50).value();
+int num_tries = params.param("num_tries", 1, "Number of tries").min(1).max(50).declare().value();
 
 // string parameter
-std::string frame_id = params.param("frame_id", std::string("base_link"), "TF frame").value();
+std::string frame_id = params.param("frame_id", std::string("base_link"), "TF frame").declare().value();
 
 // bool parameter
 bool debug = params.param("debug", false, "Enable debug mode").value();
 
 // double parameter
-double threshold = params.param("threshold", 0.75, "Threshold value").min(0.0).max(1.0).value();
+double threshold = params.param("threshold", 0.75, "Threshold value").min(0.0).max(1.0).declare().value();
 
 // enum parameter
 int mode = params.param("mode", 0, "Operating mode").enumerate({
     {0, "Default", "Default operating mode"},
     {1, "Advanced", "Advanced operating mode"},
-    {20, "Legacy", "Legacy operating mode"}}).value();
+    {20, "Legacy", "Legacy operating mode"}}).declare().value();
 ```
 
 #### Dynamic Parameters
@@ -87,11 +90,11 @@ parameter should be stored:
 
 ```
 int num_tries = 0;
-params.param(&num_tries, "num_tries", 1, "Number of tries").min(1).max(50).dynamic();
+params.param(&num_tries, "num_tries", 1, "Number of tries").min(1).max(50).dynamic().declare();
 
-while (ros::ok()) {
+while (rclcpp::ok()) {
     process.execute(num_tries);
-    ros::spinOnce();
+    rclcpp::spin_some(node);
 }
 
 ```
@@ -103,15 +106,15 @@ the parameter object returned by the handler should be used to ensure thread-saf
 data access.
 
 ```
-auto num_tries = params.param("num_tries", 1, "Number of tries").min(1).max(50).dynamic();
+auto num_tries = params.param("num_tries", 1, "Number of tries").min(1).max(50).dynamic().declare();
 
 std::thread t([&](){
-    while (ros::ok()) {
+    while (rclcpp::ok()) {
         process.execute(num_tries.value());
     }
 });
 
-ros::spin();
+rclcpp::spin(node);
 t.join();
 
 ```
@@ -125,18 +128,27 @@ The different parameter types are:
 In addition to accessing the current value, the parameter object can be used to 
 publish an update to the parameter using the `.update()` method.
 
-Finally, in some cases a direct callback may be desired to notify the process
+In some cases a direct callback may be desired to notify the process
 that the value has changed:
 
 ```
 params.param("num_tries", 1, "Number of tries").min(1).max(50).callback([](int value){
     process.setNumTries(value);
-});
+}).declare();
 
-while (ros::ok()) {
+while (rclcpp::ok()) {
     process.exectute();
-    ros::spinOnce();
+    rclcpp::spin_some(node);
 }
+```
+
+Finally, it's possible to register a callback to notify the process that any of the registered 
+dynamic parameters has been updated:
+
+```
+    params.setCallback([]() {
+        // do something
+    });
 ```
 
 These different approaches are not mutually exclusive and can be used in concert.
@@ -148,3 +160,81 @@ These different approaches are not mutually exclusive and can be used in concert
  - ros2: `.register_verbose_logging_param()` helper function added to enable dynamic parameter for log-devel
  - ros1: there is no `.step()` configuration for numeric parameters
  - ros1: parameters are ordered in configuration order in dynamic_reconfigure
+
+ ## Simple Profiler
+
+ The `simple_profiler.h` header file provides a simple, low overhead, time profiling utility.
+
+ ```
+
+// enable/disable profiling.
+::profile::set_enabled(true);
+
+// start a new named scope at current level
+profile_scope("new_scope");
+
+// do work
+
+// open a new scope layer
+::profile::push();
+
+// start a child scope
+profile_scope("child_scope1");
+
+// do work
+
+// start a second child scope, stopping previous scope: "child_scope1".
+profile_scope("child_scope2");
+
+// do work
+
+// close the current scope layer, stopping any open child scope
+::profile::pop();
+
+// do work
+
+// start a new scope, stopping "new_scope".
+profile_scope("new_scope2");
+
+// do work
+
+// close any open scopes and increment count
+::profile::finalize();
+
+// print timings
+std::cout << ::profile::get();
+ ```
+
+Profile scopes will stop automatically when:
+ - going out of the scope they were executed in
+ - a new scope on the same level is opened
+ - the current scope level is closed with a `::profile::pop()`
+ - `::profile::finalize()` is called
+
+Calling `::profile::finalize()` will increment the timing count for tracking the average timings
+over multiple iterations.
+
+Calling `::profile::set_enabled(true)` can dynamically enabled or disable the profiling, though
+even with disabled a single comparison is made in each call to check the state of this flag. Most of
+this small overhead can be removed by setting the `-DPROFILE_DISABLED` compiler flag.
+
+Profiling is performed in a thread_local manner, so it is thread-safe, but timings aren't
+aggregated across threads.
+
+The timing profile is stream formatted like this:
+
+```
+timing profile (ms)   elapsed     avg
+=====================================
+handle_points ........ 282.22  239.91
+| get_transforms ....... 0.05    0.05
+| transform ............ 2.33    2.24
+| fit ................ 279.70  237.48
+| | sample ............. 3.21    3.07
+| | index .............. 3.53    3.16
+| | init ............... 0.41    0.35
+| | setup ............. 28.05   25.90
+| |_solve ............ 205.69  168.50
+|_publish .............. 0.01    0.01
+
+```
