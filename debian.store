@@ -1,1 +1,1 @@
-{"base": "bb02fda", "parent": "debian/rolling/hatchbed_common", "previous": "16fd26a", "trim": "", "trimbase": ""}
+{"base": "ec0da78e5e4b", "parent": "debian/kilted/hatchbed_common", "previous": "64f7d3505980", "trim": "", "trimbase": ""}
