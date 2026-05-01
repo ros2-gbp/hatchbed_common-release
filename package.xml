@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>hatchbed_common</name>
-  <version>0.1.5</version>
+  <version>0.1.6</version>
   <description>Common Hatchbed C++ utility code for ROS, such registering and handling updates to ros parameters.</description>
 
   <maintainer email="marcalban@hatchbed.com">Marc Alban</maintainer>
@@ -9,10 +9,24 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>eigen</depend>
+  <depend>fmt</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>visualization_msgs</depend>
 
+  <test_depend>ament_cmake_cpplint</test_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>rclcpp_lifecycle</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
