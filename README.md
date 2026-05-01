@@ -1,3 +1,26 @@
+## hatchbed_common (rolling) - 0.1.7-1
+
+The packages in the `hatchbed_common` repository were released into the `rolling` distro by running `/home/malban/.local/bin/bloom-release --rosdistro rolling --track rolling hatchbed_common` on `Fri, 01 May 2026 15:14:29 -0000`
+
+The `hatchbed_common` package was released.
+
+Version of package(s) in repository `hatchbed_common`:
+
+- upstream repository: https://github.com/hatchbed/hatchbed_common.git
+- release repository: https://github.com/ros2-gbp/hatchbed_common-release.git
+- rosdistro version: `0.1.5-2`
+- old version: `0.1.6-1`
+- new version: `0.1.7-1`
+
+Versions of tools used:
+
+- bloom version: `0.13.0`
+- catkin_pkg version: `1.0.0`
+- rosdep version: `0.25.1`
+- rosdistro version: `1.0.1`
+- vcstools version: `0.1.42`
+
+
 ## hatchbed_common (jazzy) - 0.1.7-1
 
 The packages in the `hatchbed_common` repository were released into the `jazzy` distro by running `/home/malban/.local/bin/bloom-release --rosdistro jazzy --track jazzy hatchbed_common` on `Fri, 01 May 2026 15:08:57 -0000`
