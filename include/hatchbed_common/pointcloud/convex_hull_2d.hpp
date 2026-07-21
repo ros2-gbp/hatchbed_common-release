@@ -28,23 +28,22 @@
 
 #pragma once
 
-#include <array>
+#include <vector>
 
-#include <tf2/LinearMath/Quaternion.hpp>
+#include <Eigen/Core>
 
 namespace hatchbed_common {
-namespace localization {
+namespace pointcloud {
 
-using Covariance = std::array<double, 36>;
+// 2D convex hull of pts using Andrew's monotone chain algorithm.
+// Returns vertices in counter-clockwise order. Input is consumed (passed by value).
+std::vector<Eigen::Vector2f> convexHull2D(std::vector<Eigen::Vector2f> pts);
 
-/**
- * Rotates a 6x6 covariance matrix by a rotation, applying it to both the
- * translational and rotational components.
- *
- * C_out = J * C_in * J^T,
- * where J = diag(R, R) (block diagonal with rotation matrix R)
- */
-Covariance rotateCovariance(const Covariance& cov_in, const tf2::Quaternion& q);
+// Distance from p to the nearest point on the boundary of a CCW convex polygon.
+// Returns 0.0 if p is inside or on the polygon.
+float distToConvexPolygon2D(
+    const Eigen::Vector2f& p,
+    const std::vector<Eigen::Vector2f>& hull);
 
-}  // namespace localization
+}  // namespace pointcloud
 }  // namespace hatchbed_common
