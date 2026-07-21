@@ -2,6 +2,30 @@
 Changelog for package hatchbed_common
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.8 (2026-07-21)
+------------------
+* Add explicit-source-location logging free functions (``logging/functions.h``): ``log_at``,
+  ``debug``, ``info``, ``warn``, ``error``, ``fatal`` — each accepting ``(logger, file, func,
+  line, message)`` with both ``std::string`` and ``fmt::format_string`` overloads, plus
+  no-logger variants that forward to the default logger.
+* Add 2D convex hull utility (``pointcloud/convex_hull_2d.hpp``): ``convexHull2D()`` computes
+  the CCW convex hull of a range of 2D points using Andrew's monotone chain algorithm.
+* Add ``ConvexPrism`` type and operations (``pointcloud/convex_prism.hpp``):
+  ``makeConvexPrism()`` builds a prism from 3D points; ``transformConvexPrism()`` applies a
+  rigid-body transform; ``padConvexPrism()`` expands the XY footprint by a margin;
+  ``cropToConvexPrism()`` filters a point cloud to the prism interior.
+* Add ``hasXYZFloat()`` convenience helper to ``pointcloud/point_cloud2_util.hpp``.
+* Restructure ``hatchbed_common_localization`` into two focused sub-libraries:
+  * ``hatchbed_common::transforms`` (``transforms/transform_util.h``,
+    ``transforms/covariance_util.h``, ``transforms/pose_buffer.h``) -- frame geometry,
+    covariance rotation, pose interpolation, ``tf_reroot`` and ``reframe_odom`` nodes.
+    ``toIsometry(TransformStamped)`` is the canonical SE(3) conversion helper.
+  * ``hatchbed_common::odometry`` -- odometry signal conversion and velocity muxing nodes:
+    ``imu_to_twist``, ``odom_to_twist``, ``odom_tf_broadcast``, ``velocity_sensor_mux``
+    (formerly ``twist_mux``).
+* Fix build against the newer ``tf2_ros`` API.
+* Contributors: Marc Alban
+
 0.1.7 (2026-05-01)
 ------------------
 * Humble build fixes. (`#15 <https://github.com/hatchbed/hatchbed_common/issues/15>`_)

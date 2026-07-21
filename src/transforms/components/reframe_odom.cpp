@@ -32,15 +32,17 @@
 #include <string>
 
 #include <hatchbed_common/param_handler.h>
-#include <hatchbed_common/localization/covariance_util.h>
+#include <hatchbed_common/transforms/covariance_util.h>
 #include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
-#include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.hpp>
+#include <tf2_ros/transform_listener.hpp>
+
+#include <hatchbed_common/tf2_ros_compat.h>
 
 namespace hatchbed_common {
-namespace localization {
+namespace transforms {
 
 /**
  * Reframes an odometry topic to another fixed frame.  The transform is only
@@ -72,7 +74,7 @@ private:
             "Target fixed frame for the output odometry.").declare();
 
         tf_buffer_      = std::make_shared<tf2_ros::Buffer>(get_clock());
-        tf_listener_    = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, this);
+        tf_listener_    = makeTransformListener(*tf_buffer_, this);
 
         pub_odom_ = create_publisher<nav_msgs::msg::Odometry>(
             "odom_out", rclcpp::QoS(10));
@@ -181,7 +183,7 @@ private:
     tf2::Transform transform_;
 };
 
-}  // namespace localization
+}  // namespace transforms
 }  // namespace hatchbed_common
 
-RCLCPP_COMPONENTS_REGISTER_NODE(hatchbed_common::localization::ReframeOdom)
+RCLCPP_COMPONENTS_REGISTER_NODE(hatchbed_common::transforms::ReframeOdom)
