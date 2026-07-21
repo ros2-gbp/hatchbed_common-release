@@ -40,12 +40,14 @@
 #include <tf2/LinearMath/Quaternion.hpp>
 #include <tf2/LinearMath/Transform.hpp>
 #include <tf2_msgs/msg/tf_message.hpp>
-#include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_broadcaster.h>
-#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.hpp>
+#include <tf2_ros/transform_broadcaster.hpp>
+#include <tf2_ros/transform_listener.hpp>
+
+#include <hatchbed_common/tf2_ros_compat.h>
 
 namespace hatchbed_common {
-namespace localization {
+namespace transforms {
 
 /**
  * Bridges two otherwise disconnected TF trees to broadcast parent_frame ->
@@ -100,9 +102,9 @@ private:
 
         // Main buffer fed from /tf and /tf_static via TransformListener.
         main_buffer_   = std::make_shared<tf2_ros::Buffer>(get_clock());
-        main_listener_ = std::make_shared<tf2_ros::TransformListener>(*main_buffer_, this);
+        main_listener_ = makeTransformListener(*main_buffer_, this);
 
-        tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+        tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
         sub_tf_ = create_subscription<tf2_msgs::msg::TFMessage>(
             "tf_source", rclcpp::QoS(100),
@@ -285,7 +287,7 @@ private:
     bool        parent_in_main_;    // set by detectPivot
 };
 
-}  // namespace localization
+}  // namespace transforms
 }  // namespace hatchbed_common
 
-RCLCPP_COMPONENTS_REGISTER_NODE(hatchbed_common::localization::TfReroot)
+RCLCPP_COMPONENTS_REGISTER_NODE(hatchbed_common::transforms::TfReroot)
